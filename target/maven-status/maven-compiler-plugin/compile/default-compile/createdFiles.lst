@@ -1,0 +1,6 @@
+me\xidentified\referraldomains\commands\CheckDomainCommand.class
+me\xidentified\referraldomains\commands\ReferralLinkCommand.class
+me\xidentified\referraldomains\commands\RemoveReferralCommand.class
+me\xidentified\referraldomains\EventListener.class
+me\xidentified\referraldomains\ReferralDomains$1.class
+me\xidentified\referraldomains\ReferralDomains.class

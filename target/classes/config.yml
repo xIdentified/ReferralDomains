@@ -1,0 +1,24 @@
+# ReferralDomains by xIdentified
+# Join Discord for support - https://discord.gg/rV7emXHSjp
+
+cloudfare-api-key: <PASTE_YOUR_KEY_HERE>
+zone-id: <ZONE_ID_HERE>
+server-ip: 0.0.0.0
+server-port: 25565
+domain: "archforge.net"
+
+referrer-rewards:
+  - 'give {player} diamond 5'
+  - 'eco give {player} 1000'
+  - 'say Thanks for referring a friend, {player}!'
+referrer-random-reward: true # if false they'll get all rewards instead
+
+new-player-rewards:
+  - 'give {player} iron_ingot 10'
+  - 'eco give {player} 500'
+  - 'say Welcome to the server, {player}!'
+new-player-random-reward: true
+
+required_online_minutes: 10 # How long does the new player need to stay online before both players get rewards?
+
+debug_mode: false

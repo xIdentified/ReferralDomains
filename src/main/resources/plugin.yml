@@ -1,0 +1,21 @@
+name: ReferralDomains
+version: '${project.version}'
+main: me.xidentified.referraldomains.ReferralDomains
+api-version: '1.20'
+commands:
+  referral-link:
+    description: Generate a referral link
+    usage: /<command>
+  check-domain:
+    description: Check the status of a player's referral domain
+    usage: /<command> <playerName>
+  remove-referral-link:
+    description: Delete a player's referral DNS record
+    usage: /<command> <playerName>
+permissions:
+  referral.create:
+    description: Allows creation of referral links
+    default: op
+  referral.admin:
+    description: Allows creation of referral links
+    default: op
