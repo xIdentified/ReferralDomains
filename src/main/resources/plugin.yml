@@ -15,7 +15,10 @@ commands:
 permissions:
   referral.create:
     description: Allows creation of referral links
+    default: true
+  referral.check:
+    description: Allows you to check status of a player domain
     default: op
   referral.admin:
-    description: Allows creation of referral links
+    description: Allows use of admin commands (remove links, etc)
     default: op

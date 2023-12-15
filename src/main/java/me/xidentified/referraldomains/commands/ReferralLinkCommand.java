@@ -1,7 +1,11 @@
 package me.xidentified.referraldomains.commands;
 
 import me.xidentified.referraldomains.ReferralDomains;
-import org.bukkit.ChatColor;
+import net.md_5.bungee.api.ChatColor;
+import net.md_5.bungee.api.chat.ClickEvent;
+import net.md_5.bungee.api.chat.HoverEvent;
+import net.md_5.bungee.api.chat.TextComponent;
+import net.md_5.bungee.api.chat.hover.content.Text;
 import org.bukkit.entity.Player;
 
 import org.bukkit.command.Command;
@@ -16,7 +20,7 @@ import java.util.UUID;
 public class ReferralLinkCommand implements CommandExecutor {
     private final ReferralDomains plugin;
     private final Map<UUID, Long> lastUsedTime;
-    private static final long COOLDOWN_TIME = 30000; // 30 seconds
+    private static final long COOLDOWN_TIME = 30000; // 30s
 
     public ReferralLinkCommand(ReferralDomains plugin) {
         this.plugin = plugin;
@@ -35,7 +39,7 @@ public class ReferralLinkCommand implements CommandExecutor {
 
         // Check for cooldown
         if (lastUsedTime.containsKey(playerId) && System.currentTimeMillis() - lastUsedTime.get(playerId) < COOLDOWN_TIME) {
-            player.sendMessage("Please wait before using this command again.");
+            player.sendMessage(ChatColor.RED + "Please wait before using this command again.");
             return true;
         }
 
@@ -52,10 +56,11 @@ public class ReferralLinkCommand implements CommandExecutor {
         String port = plugin.getConfig().getString("server-port");
         String referralLink = playerName + "." + domain;
 
-        // Check if a DNS record already exists for this player
         String dnsRecordStatus = plugin.checkDNSRecord(playerName);
-        if (dnsRecordStatus.contains("DNS Record Found") && plugin.referralLinks.containsKey(playerName)) {
-            player.sendMessage(ChatColor.RED + "A referral link already exists for you: " + ChatColor.GREEN + referralLink + ":" + port);
+        if (dnsRecordStatus.contains("Online") && plugin.getStorage().hasReferralLink(playerName)) {
+            // If the DNS record is online and the referral link exists in the database
+            String existingLink = plugin.getStorage().getReferralLink(playerName);
+            sendReferralLinkMessage(player, existingLink, port); // Send existing referral link
             return true;
         }
 
@@ -63,13 +68,26 @@ public class ReferralLinkCommand implements CommandExecutor {
 
         boolean isCreated = plugin.createDNSRecord(playerName);
         if (isCreated) {
-            plugin.referralLinks.put(playerName, referralLink);
+            plugin.getStorage().saveReferralLink(playerName, referralLink);
             plugin.debugLog("Successfully created referral link for " + playerName);
-            player.sendMessage(ChatColor.GREEN + "Your new referral link is: " + ChatColor.YELLOW + referralLink + ":" + port);
         } else {
             plugin.getLogger().severe("Failed to create DNS record for " + playerName);
             player.sendMessage(ChatColor.RED + "There was an error creating your referral link. Please try again later.");
         }
         return true;
+    }
+
+    // Method to send referral link message
+    private void sendReferralLinkMessage(Player player, String referralLink, String port) {
+        TextComponent message = new TextComponent("Your referral link is: ");
+        message.setColor(ChatColor.GREEN);
+
+        TextComponent link = new TextComponent(referralLink + ":" + port);
+        link.setColor(ChatColor.YELLOW);
+        link.setClickEvent(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, referralLink + ":" + port));
+        link.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new Text("Click to copy!")));
+
+        message.addExtra(link);
+        player.spigot().sendMessage(message);
     }
 }

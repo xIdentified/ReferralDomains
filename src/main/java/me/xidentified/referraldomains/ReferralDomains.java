@@ -3,7 +3,7 @@ package me.xidentified.referraldomains;
 import me.xidentified.referraldomains.commands.*;
 import org.apache.http.client.methods.HttpDelete;
 import org.apache.http.client.methods.HttpGet;
-import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.ChatColor;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import org.apache.http.HttpResponse;
@@ -13,7 +13,6 @@ import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.util.EntityUtils;
 
-import java.io.File;
 import java.io.IOException;
 import java.util.*;
 
@@ -26,11 +25,13 @@ public final class ReferralDomains extends JavaPlugin {
     public Map<String, String> referralLinks; // To store referral links
     public Map<String, List<String>> pendingRewards; // Store pending rewards for next login
     private Map<UUID, Long> playerOnlineTime; // Map to track online time before granting rewards
+    private SQLiteStorage storage;
 
     @Override
     public void onEnable() {
         // Initialize the referralLinks map
-        referralLinks = new HashMap<>();
+        storage = new SQLiteStorage(this);
+        referralLinks = storage.loadReferralLinks();
         pendingRewards = new HashMap<>();
         playerOnlineTime = new HashMap<>();
 
@@ -47,7 +48,6 @@ public final class ReferralDomains extends JavaPlugin {
 
         // Further initialization...
         validateConfigSetup();
-        loadReferralLinks();
     }
 
     private void validateConfigSetup() {
@@ -76,26 +76,26 @@ public final class ReferralDomains extends JavaPlugin {
             // Create A record for the player's username
             String aRecordName = playerName.toLowerCase() + "." + serverDomain;
             debugLog("Creating A record for " + aRecordName);
-            return createRecord(httpClient, apiUrl, apiKey, "A", aRecordName, serverIP);
+            return createRecord(httpClient, apiUrl, apiKey, aRecordName, serverIP);
         } catch (IOException e) {
             e.printStackTrace();
             return false;
         }
     }
 
-    private boolean createRecord(CloseableHttpClient httpClient, String apiUrl, String apiKey, String type, String name, String content) throws IOException {
+    private boolean createRecord(CloseableHttpClient httpClient, String apiUrl, String apiKey, String name, String content) throws IOException {
         HttpPost request = new HttpPost(apiUrl);
         request.addHeader("Content-Type", "application/json");
         request.addHeader("Authorization", "Bearer " + apiKey);
 
-        String json = "{\"type\":\"" + type + "\",\"name\":\"" + name + "\",\"content\":\"" + content + "\",\"ttl\":120,\"proxied\":false}";
+        String json = "{\"type\":\"" + "A" + "\",\"name\":\"" + name + "\",\"content\":\"" + content + "\",\"ttl\":120,\"proxied\":false}";
         request.setEntity(new StringEntity(json));
 
         HttpResponse response = httpClient.execute(request);
         int statusCode = response.getStatusLine().getStatusCode();
         String responseString = EntityUtils.toString(response.getEntity());
 
-        debugLog("Cloudflare API Response for " + type + " record: Status Code: " + statusCode + ", Response Body: " + responseString);
+        debugLog("Cloudflare API Response for " + "A" + " record: Status Code: " + statusCode + ", Response Body: " + responseString);
         return statusCode == 200;
     }
 
@@ -116,14 +116,22 @@ public final class ReferralDomains extends JavaPlugin {
             String responseString = EntityUtils.toString(response.getEntity());
 
             if (statusCode == 200) {
-                return "DNS Record Found: " + responseString; // TODO: Actually parse the response
+                // Parse response to check domain status
+                JSONObject jsonResponse = new JSONObject(responseString);
+                JSONArray resultArray = jsonResponse.getJSONArray("result");
+                if (!resultArray.isEmpty()) {
+                    // Assume domain is online if there's a DNS record
+                    return ChatColor.GREEN + "Online";
+                } else {
+                    return ChatColor.RED + "Offline";
+                }
             } else {
                 getLogger().severe("Error fetching DNS record for " + playerName + ": " + responseString);
-                return "Error fetching DNS record, status code: " + statusCode;
+                return ChatColor.RED + "Error fetching DNS record, status code: " + statusCode;
             }
-        } catch (IOException e) {
-            getLogger().severe("IOException while fetching DNS record for " + playerName + ": " + e.getMessage());
-            return "Error fetching DNS record: IOException";
+        } catch (IOException | JSONException e) {
+            getLogger().severe("Exception while fetching DNS record for " + playerName + ": " + e.getMessage());
+            return ChatColor.RED + "Error fetching DNS record: " + e.getMessage();
         }
     }
 
@@ -268,35 +276,8 @@ public final class ReferralDomains extends JavaPlugin {
         getServer().dispatchCommand(getServer().getConsoleSender(), commandToExecute);
     }
 
-    public void loadReferralLinks() {
-        File file = new File(getDataFolder(), "storage.yml");
-        if (!file.exists()) {
-            return;
-        }
 
-        YamlConfiguration config = YamlConfiguration.loadConfiguration(file);
-        referralLinks = new HashMap<>();
 
-        for (String key : config.getKeys(false)) {
-            String value = config.getString(key);
-            referralLinks.put(key, value);
-        }
-    }
-
-    public void saveReferralLinks() {
-        File file = new File(getDataFolder(), "storage.yml");
-        YamlConfiguration config = YamlConfiguration.loadConfiguration(file);
-
-        for (Map.Entry<String, String> entry : referralLinks.entrySet()) {
-            config.set(entry.getKey(), entry.getValue());
-        }
-
-        try {
-            config.save(file);
-        } catch (IOException e) {
-            getLogger().severe("Could not save referral links: " + e.getMessage());
-        }
-    }
     public void debugLog(String message) {
         if (getConfig().getBoolean("debug_mode")) {
             getLogger().info("[DEBUG] " + message);
@@ -306,6 +287,8 @@ public final class ReferralDomains extends JavaPlugin {
     @Override
     public void onDisable() {
         // Plugin shutdown logic
-        saveReferralLinks();
+        storage.closeConnection();
     }
+
+    public SQLiteStorage getStorage() { return this.storage; }
 }

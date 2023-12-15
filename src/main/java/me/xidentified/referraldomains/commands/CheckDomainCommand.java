@@ -1,6 +1,7 @@
 package me.xidentified.referraldomains.commands;
 
 import me.xidentified.referraldomains.ReferralDomains;
+import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -23,7 +24,7 @@ public class CheckDomainCommand implements CommandExecutor {
         }
 
         if (args.length != 1) {
-            sender.sendMessage("Usage: /check-domain <playerName>");
+            sender.sendMessage(ChatColor.YELLOW + "Usage: /check-domain <playerName>");
             return true;
         }
 
@@ -31,8 +32,7 @@ public class CheckDomainCommand implements CommandExecutor {
 
         // Retrieve and check the DNS record for the player's custom domain
         String domainStatus = plugin.checkDNSRecord(playerName);
-
-        sender.sendMessage("Domain status for " + playerName + ": " + domainStatus);
+        sender.sendMessage(ChatColor.YELLOW + "Domain status for " + playerName + ": " + domainStatus);
         return true;
     }
 }
