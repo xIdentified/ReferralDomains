@@ -3,7 +3,9 @@ package me.xidentified.referraldomains;
 import me.xidentified.referraldomains.commands.*;
 import org.apache.http.client.methods.HttpDelete;
 import org.apache.http.client.methods.HttpGet;
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import org.apache.http.HttpResponse;
@@ -29,7 +31,9 @@ public final class ReferralDomains extends JavaPlugin {
 
     @Override
     public void onEnable() {
-        // Initialize the referralLinks map
+        if (!getDataFolder().exists()) {
+            getDataFolder().mkdirs();
+        }
         storage = new SQLiteStorage(this);
         referralLinks = storage.loadReferralLinks();
         pendingRewards = new HashMap<>();
@@ -42,9 +46,15 @@ public final class ReferralDomains extends JavaPlugin {
         this.getCommand("referral-link").setExecutor(new ReferralLinkCommand(this));
         this.getCommand("check-domain").setExecutor(new CheckDomainCommand(this));
         this.getCommand("remove-referral-link").setExecutor(new RemoveReferralCommand(this));
+        this.getCommand("referralcount").setExecutor(new ReferralCountCommand(this));
 
         // Register listeners
         getServer().getPluginManager().registerEvents(new EventListener(this), this);
+
+        // Register placeholders
+        if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
+            new PlaceholderAPI(this).register();
+        }
 
         // Further initialization...
         validateConfigSetup();
@@ -220,12 +230,17 @@ public final class ReferralDomains extends JavaPlugin {
                     // Get UUID of the new player
                     UUID newPlayerUUID = getServer().getOfflinePlayer(playerName).getUniqueId();
 
+                    // Increment referral count for referrer
+                    storage.incrementReferralCount(referrer);
+                    debugLog("Incremented referral count by 1");
+
                     // Check if the referrer is online
                     if (getServer().getPlayer(referrer) == null) {
                         // Referrer is offline, add rewards to pending
+                        debugLog(referrer + " is offline, rewards will be granted next time they log in.");
                         getConfig().getStringList("referrer-rewards").forEach(command -> {
                             String cmd = command.replace("{player}", referrer);
-                            addPendingReward(referrer, cmd);
+                            addPendingReward(referrer, cmd); // Store commands to execute later
                         });
                     }
 
@@ -233,26 +248,38 @@ public final class ReferralDomains extends JavaPlugin {
                     new BukkitRunnable() {
                         @Override
                         public void run() {
+                            debugLog("Running scheduled check for " + playerName);
                             if (hasMetOnlineRequirement(newPlayerUUID)) {
-                                // New player has met the online time requirement, execute their rewards
+                                debugLog(playerName + " met online requirement, executing rewards.");
                                 executeRewards(playerName, getConfig().getStringList("new-player-rewards"), getConfig().getBoolean("new-player-random-reward"));
-                                executeRewards(referrer, getConfig().getStringList("referrer-rewards"), getConfig().getBoolean("referrer-random-reward"));
+                            } else {
+                                debugLog(playerName + " did not meet online requirement.");
                             }
                         }
-                    }.runTaskLater(this, 20L * 60 * getConfig().getInt("required_online_minutes")); // Delay based on required online minutes
+                    }.runTaskLater(this, 20L * 60 * getConfig().getInt("required_online_minutes"));
                 });
     }
 
     public void addPendingReward(String playerName, String command) {
+        debugLog("Adding pending reward for " + playerName + ": " + command);
         pendingRewards.computeIfAbsent(playerName, k -> new ArrayList<>()).add(command);
-        // Consider saving pending rewards to a file here for persistence
+        getStorage().savePendingReward(playerName, command); // Save to database
     }
 
     public void grantPendingRewards(String playerName) {
-        List<String> rewards = pendingRewards.get(playerName);
-        if (rewards != null) {
-            rewards.forEach(command -> getServer().dispatchCommand(getServer().getConsoleSender(), command));
-            pendingRewards.remove(playerName); // Clear pending rewards after granting
+        List<String> rewards = getStorage().loadPendingRewards(playerName);
+        debugLog("Attempting to grant " + rewards.size() + " pending rewards for " + playerName);
+
+        if (!rewards.isEmpty()) {
+            rewards.forEach(command -> {
+                String formattedCommand = command.replace("{player}", playerName);
+                debugLog("Executing pending reward command for " + playerName + ": " + formattedCommand);
+                getServer().dispatchCommand(getServer().getConsoleSender(), formattedCommand);
+            });
+            getStorage().clearPendingRewards(playerName); // Clear from database after granting
+            pendingRewards.remove(playerName); // Clear from in-memory storage
+        } else {
+            debugLog("No pending rewards found for " + playerName);
         }
     }
 
@@ -262,21 +289,42 @@ public final class ReferralDomains extends JavaPlugin {
 
     public boolean hasMetOnlineRequirement(UUID playerId) {
         long requiredTime = getConfig().getLong("required_online_minutes") * 60000; // Convert to milliseconds
+        long buffer = 5000;
         Long startTime = playerOnlineTime.get(playerId);
-        return startTime != null && (System.currentTimeMillis() - startTime) >= requiredTime;
+        long timeElapsed = startTime != null ? System.currentTimeMillis() - startTime : -1;
+
+        debugLog("Time elapsed for player " + playerId + ": " + timeElapsed + "ms, Required: " + requiredTime + "ms");
+        return startTime != null && timeElapsed + buffer >= requiredTime;
+    }
+
+    public boolean hasPendingRewards(String playerName) {
+        return pendingRewards.containsKey(playerName) && !pendingRewards.get(playerName).isEmpty();
     }
 
     private void executeRewards(String player, List<String> rewards, boolean randomReward) {
+        Player bukkitPlayer = getServer().getPlayer(player);
+        if (bukkitPlayer == null) {
+            debugLog("Player " + player + " is not online. Rewards will be granted later.");
+            rewards.forEach(command -> addPendingReward(player, command));
+            return;
+        }
         if (rewards.isEmpty()) return;
 
         Random rand = new Random();
-        String commandToExecute = randomReward ? rewards.get(rand.nextInt(rewards.size())) : String.join(";", rewards);
-        commandToExecute = commandToExecute.replace("{player}", player);
+        List<String> commandsToExecute;
 
-        getServer().dispatchCommand(getServer().getConsoleSender(), commandToExecute);
+        if (randomReward) {
+            commandsToExecute = Collections.singletonList(rewards.get(rand.nextInt(rewards.size())));
+        } else {
+            commandsToExecute = new ArrayList<>(rewards);
+        }
+
+        for (String command : commandsToExecute) {
+            String formattedCommand = command.replace("{player}", player);
+            debugLog("Executing reward command: " + formattedCommand);
+            getServer().dispatchCommand(getServer().getConsoleSender(), formattedCommand);
+        }
     }
-
-
 
     public void debugLog(String message) {
         if (getConfig().getBoolean("debug_mode")) {

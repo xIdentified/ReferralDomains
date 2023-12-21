@@ -60,7 +60,7 @@ public class ReferralLinkCommand implements CommandExecutor {
         if (dnsRecordStatus.contains("Online") && plugin.getStorage().hasReferralLink(playerName)) {
             // If the DNS record is online and the referral link exists in the database
             String existingLink = plugin.getStorage().getReferralLink(playerName);
-            sendReferralLinkMessage(player, existingLink, port); // Send existing referral link
+            sendReferralLinkMessage(player, existingLink, port);
             return true;
         }
 
@@ -70,6 +70,7 @@ public class ReferralLinkCommand implements CommandExecutor {
         if (isCreated) {
             plugin.getStorage().saveReferralLink(playerName, referralLink);
             plugin.debugLog("Successfully created referral link for " + playerName);
+            sendReferralLinkMessage(player, referralLink, port);
         } else {
             plugin.getLogger().severe("Failed to create DNS record for " + playerName);
             player.sendMessage(ChatColor.RED + "There was an error creating your referral link. Please try again later.");

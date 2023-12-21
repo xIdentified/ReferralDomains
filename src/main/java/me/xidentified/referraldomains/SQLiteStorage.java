@@ -7,9 +7,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 public class SQLiteStorage {
     private Connection connection;
@@ -36,8 +34,9 @@ public class SQLiteStorage {
 
                 // Create tables if they don't exist
                 try (Statement statement = connection.createStatement()) {
-                    statement.execute("CREATE TABLE IF NOT EXISTS referral_links (player_name TEXT PRIMARY KEY, domain TEXT);");
+                    statement.execute("CREATE TABLE IF NOT EXISTS referral_links (player_name TEXT PRIMARY KEY, domain TEXT, referral_count INTEGER DEFAULT 0);");
                     statement.execute("CREATE TABLE IF NOT EXISTS first_joins (player_uuid TEXT PRIMARY KEY);");
+                    statement.execute("CREATE TABLE IF NOT EXISTS pending_rewards (player_name TEXT, command TEXT);");
                 }
             }
         } catch (SQLException | ClassNotFoundException e) {
@@ -114,6 +113,71 @@ public class SQLiteStorage {
             plugin.getLogger().severe("Could not retrieve referral link for " + playerName + ": " + e.getMessage());
         }
         return null; // Return null if no link found or an error occurred
+    }
+
+    public int getReferralCount(String playerName) {
+        String query = "SELECT referral_count FROM referral_links WHERE player_name = ?";
+        try (PreparedStatement ps = connection.prepareStatement(query)) {
+            ps.setString(1, playerName);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                return rs.getInt("referral_count");
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Could not get referral count for " + playerName + ": " + e.getMessage());
+        }
+        return 0;
+    }
+
+    public void incrementReferralCount(String playerName) {
+        String query = "UPDATE referral_links SET referral_count = referral_count + 1 WHERE player_name = ?";
+        try (PreparedStatement ps = connection.prepareStatement(query)) {
+            ps.setString(1, playerName);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Could not increment referral count for " + playerName + ": " + e.getMessage());
+        }
+    }
+
+    public void savePendingReward(String playerName, String command) {
+        String lowerCasePlayerName = playerName.toLowerCase();
+        try (PreparedStatement ps = connection.prepareStatement("INSERT INTO pending_rewards (player_name, command) VALUES (?, ?)")) {
+            ps.setString(1, lowerCasePlayerName);
+            ps.setString(2, command);
+            // int affectedRows = ps.executeUpdate();
+            // plugin.getLogger().info("Saved pending reward for " + lowerCasePlayerName + ": " + command + ". Rows affected: " + affectedRows);
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Could not save pending reward for " + lowerCasePlayerName + ": " + e.getMessage());
+        }
+    }
+
+    public void clearPendingRewards(String playerName) {
+        String lowerCasePlayerName = playerName.toLowerCase();
+        try (PreparedStatement ps = connection.prepareStatement("DELETE FROM pending_rewards WHERE player_name = ?")) {
+            ps.setString(1, lowerCasePlayerName);
+            int affectedRows = ps.executeUpdate();
+            // plugin.getLogger().info("Cleared pending rewards for " + lowerCasePlayerName + ". Rows affected: " + affectedRows);
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Could not clear pending rewards for " + lowerCasePlayerName + ": " + e.getMessage());
+        }
+    }
+
+    public List<String> loadPendingRewards(String playerName) {
+        List<String> rewards = new ArrayList<>();
+        String lowerCasePlayerName = playerName.toLowerCase();
+        try (PreparedStatement ps = connection.prepareStatement("SELECT command FROM pending_rewards WHERE player_name = ?")) {
+            ps.setString(1, lowerCasePlayerName);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                String command = rs.getString("command");
+                rewards.add(command);
+                // plugin.getLogger().info("Loaded pending reward for " + lowerCasePlayerName + ": " + command);
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Could not load pending rewards for " + lowerCasePlayerName + ": " + e.getMessage());
+        }
+        plugin.getLogger().info("Total pending rewards loaded for " + lowerCasePlayerName + ": " + rewards.size());
+        return rewards;
     }
 
     public void closeConnection() {

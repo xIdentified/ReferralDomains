@@ -24,7 +24,7 @@ public class RemoveReferralCommand implements CommandExecutor {
         }
 
         if (args.length != 1) {
-            sender.sendMessage("Usage: /remove-referral-link <playerName>");
+            sender.sendMessage(ChatColor.YELLOW + "Usage: /remove-referral-link <playerName>");
             return true;
         }
 

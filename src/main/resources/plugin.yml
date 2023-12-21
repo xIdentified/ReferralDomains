@@ -6,12 +6,19 @@ commands:
   referral-link:
     description: Generate a referral link
     usage: /<command>
+  referralcount:
+    description: Check the number of players you've referred
+    usage: /<command>
   check-domain:
     description: Check the status of a player's referral domain
     usage: /<command> <playerName>
   remove-referral-link:
     description: Delete a player's referral DNS record
     usage: /<command> <playerName>
+  testreferral:
+    description: Simulate a referral for testing purposes
+    usage: /<command> <referrer> <referred>
+    permission: referral.admin
 permissions:
   referral.create:
     description: Allows creation of referral links
