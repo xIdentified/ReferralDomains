@@ -41,7 +41,13 @@ public class EventListener implements Listener {
 
     @EventHandler
     public void afterPlayerJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+
+        // Save player IP to prevent abuse
+        String ip = player.getAddress().getAddress().getHostAddress();
+        plugin.getStorage().savePlayerIP(player.getUniqueId(), ip);
+
         // Executes pending rewards after the player logs in
-        plugin.grantPendingRewards(event.getPlayer().getName());
+        plugin.grantPendingRewards(player.getName());
     }
 }

@@ -37,6 +37,7 @@ public class SQLiteStorage {
                     statement.execute("CREATE TABLE IF NOT EXISTS referral_links (player_name TEXT PRIMARY KEY, domain TEXT, referral_count INTEGER DEFAULT 0);");
                     statement.execute("CREATE TABLE IF NOT EXISTS first_joins (player_uuid TEXT PRIMARY KEY);");
                     statement.execute("CREATE TABLE IF NOT EXISTS pending_rewards (player_name TEXT, command TEXT);");
+                    statement.execute("CREATE TABLE IF NOT EXISTS player_ips (player_uuid TEXT PRIMARY KEY, ip_address TEXT);");
                 }
             }
         } catch (SQLException | ClassNotFoundException e) {
@@ -178,6 +179,46 @@ public class SQLiteStorage {
         }
         plugin.getLogger().info("Total pending rewards loaded for " + lowerCasePlayerName + ": " + rewards.size());
         return rewards;
+    }
+
+    public void savePlayerIP(UUID playerUUID, String ip) {
+        String query = "REPLACE INTO player_ips (player_uuid, ip_address) VALUES (?, ?)";
+        try (PreparedStatement ps = connection.prepareStatement(query)) {
+            ps.setString(1, playerUUID.toString());
+            ps.setString(2, ip);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Could not save IP for player: " + e.getMessage());
+        }
+    }
+
+    public String getPlayerIP(UUID playerUUID) {
+        String query = "SELECT ip_address FROM player_ips WHERE player_uuid = ?";
+        try (PreparedStatement ps = connection.prepareStatement(query)) {
+            ps.setString(1, playerUUID.toString());
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getString("ip_address"); // Return the IP address if found
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Could not retrieve IP for player " + playerUUID + ": " + e.getMessage());
+        }
+        return null; // Return null if no IP found or an error occurred
+    }
+
+    public boolean hasMatchingIPs(String ip, String referrerName) {
+        String query = "SELECT 1 FROM player_ips WHERE ip_address = ? AND player_uuid != (SELECT player_uuid FROM referral_links WHERE player_name = ?)";
+        try (PreparedStatement ps = connection.prepareStatement(query)) {
+            ps.setString(1, ip);
+            ps.setString(2, referrerName);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next(); // True if there's at least one matching IP, indicating potential abuse
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Could not check for matching IPs for " + referrerName + ": " + e.getMessage());
+            return false; // Default to false in case of an error
+        }
     }
 
     public void closeConnection() {

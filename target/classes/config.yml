@@ -20,5 +20,6 @@ new-player-rewards:
 new-player-random-reward: true
 
 required_online_minutes: 10 # How long does the new player need to stay online before both players get rewards?
+allow_same_ip_referrals: false
 
 debug_mode: false
