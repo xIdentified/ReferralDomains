@@ -4,7 +4,7 @@
   <groupId>me.xIdentified</groupId>
   <artifactId>ReferralDomains</artifactId>
   <name>ReferralDomains</name>
-  <version>1.1</version>
+  <version>1.2</version>
   <build>
     <resources>
       <resource>
@@ -53,7 +53,7 @@
     <dependency>
       <groupId>io.papermc.paper</groupId>
       <artifactId>paper-api</artifactId>
-      <version>1.20.2-R0.1-SNAPSHOT</version>
+      <version>1.19.3-R0.1-SNAPSHOT</version>
       <scope>provided</scope>
     </dependency>
     <dependency>

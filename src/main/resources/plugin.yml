@@ -1,7 +1,7 @@
 name: ReferralDomains
 version: '${project.version}'
 main: me.xidentified.referraldomains.ReferralDomains
-api-version: '1.20'
+api-version: '1.19'
 commands:
   referral-link:
     description: Generate a referral link
