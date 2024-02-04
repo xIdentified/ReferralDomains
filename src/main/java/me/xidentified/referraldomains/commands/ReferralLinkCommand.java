@@ -83,12 +83,15 @@ public class ReferralLinkCommand implements CommandExecutor {
         TextComponent message = new TextComponent("Your referral link is: ");
         message.setColor(ChatColor.GREEN);
 
-        TextComponent link = new TextComponent(referralLink + ":" + port);
+        String fullReferralLink = port.equals("25565") ? referralLink : referralLink + ":" + port;
+
+        TextComponent link = new TextComponent(fullReferralLink);
         link.setColor(ChatColor.YELLOW);
-        link.setClickEvent(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, referralLink + ":" + port));
+        link.setClickEvent(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, fullReferralLink));
         link.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new Text("Click to copy!")));
 
         message.addExtra(link);
         player.spigot().sendMessage(message);
     }
+
 }
