@@ -6,6 +6,7 @@ import net.md_5.bungee.api.chat.ClickEvent;
 import net.md_5.bungee.api.chat.HoverEvent;
 import net.md_5.bungee.api.chat.TextComponent;
 import net.md_5.bungee.api.chat.hover.content.Text;
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
 import org.bukkit.command.Command;
@@ -56,26 +57,34 @@ public class ReferralLinkCommand implements CommandExecutor {
         String port = plugin.getConfig().getString("server-port");
         String referralLink = playerName + "." + domain;
 
-        String dnsRecordStatus = plugin.checkDNSRecord(playerName);
-        if (dnsRecordStatus.contains("Online") && plugin.getStorage().hasReferralLink(playerName)) {
-            // If the DNS record is online and the referral link exists in the database
-            String existingLink = plugin.getStorage().getReferralLink(playerName);
-            sendReferralLinkMessage(player, existingLink, port);
-            return true;
-        }
+        player.sendMessage(ChatColor.YELLOW + "Attempting to create DNS record for " + playerName + "...");
 
-        plugin.getLogger().info("Attempting to create DNS record for " + playerName);
+        plugin.checkDNSRecord(playerName).thenAccept(dnsRecordStatus -> {
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (dnsRecordStatus.contains("Online") && plugin.getStorage().hasReferralLink(playerName)) {
+                    // If the DNS record is online and the referral link exists in the database
+                    player.sendMessage(ChatColor.GREEN + "Link already exists!");
+                    String existingLink = plugin.getStorage().getReferralLink(playerName);
+                    sendReferralLinkMessage(player, existingLink, port);
+                } else {
+                    plugin.createDNSRecord(playerName).thenAccept(isCreated -> {
+                        Bukkit.getScheduler().runTask(plugin, () -> {
+                            if (isCreated) {
+                                plugin.getStorage().saveReferralLink(playerName, referralLink);
+                                plugin.debugLog("Successfully created referral link for " + playerName);
+                                sendReferralLinkMessage(player, referralLink, port);
+                            } else {
+                                plugin.getLogger().severe("Failed to create DNS record for " + playerName);
+                                player.sendMessage(ChatColor.RED + "There was an error creating your referral link. Please try again later.");
+                            }
+                        });
+                    });
+                }
+            });
+        });
 
-        boolean isCreated = plugin.createDNSRecord(playerName);
-        if (isCreated) {
-            plugin.getStorage().saveReferralLink(playerName, referralLink);
-            plugin.debugLog("Successfully created referral link for " + playerName);
-            sendReferralLinkMessage(player, referralLink, port);
-        } else {
-            plugin.getLogger().severe("Failed to create DNS record for " + playerName);
-            player.sendMessage(ChatColor.RED + "There was an error creating your referral link. Please try again later.");
-        }
         return true;
+
     }
 
     // Method to send referral link message

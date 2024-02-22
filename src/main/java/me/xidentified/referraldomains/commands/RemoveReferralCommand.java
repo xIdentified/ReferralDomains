@@ -1,6 +1,7 @@
 package me.xidentified.referraldomains.commands;
 
 import me.xidentified.referraldomains.ReferralDomains;
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -19,7 +20,7 @@ public class RemoveReferralCommand implements CommandExecutor {
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, String[] args) {
         if (!(sender instanceof Player)) {
-            sender.sendMessage("Only admins can run this command.");
+            sender.sendMessage(ChatColor.RED + "Only players can run this command.");
             return true;
         }
 
@@ -29,13 +30,19 @@ public class RemoveReferralCommand implements CommandExecutor {
         }
 
         String playerName = args[0].toLowerCase();
-        boolean isDeleted = plugin.deleteDNSRecord(playerName);
+        sender.sendMessage(ChatColor.YELLOW + "Attempting to remove referral link for " + playerName + "...");
 
-        if (isDeleted) {
-            sender.sendMessage(ChatColor.GREEN + "Referral link for " + playerName + " has been removed!");
-        } else {
-            sender.sendMessage(ChatColor.RED + "Failed to remove referral link for " + playerName + ".");
-        }
+        // Asynchronously delete DNS record
+        plugin.deleteDNSRecord(playerName).thenAcceptAsync(isDeleted -> {
+            // Since this runs asynchronously, ensure we run the result handling back on the main server thread
+            Bukkit.getServer().getScheduler().runTask(plugin, () -> {
+                if (isDeleted) {
+                    sender.sendMessage(ChatColor.GREEN + "Referral link for " + playerName + " has been removed!");
+                } else {
+                    sender.sendMessage(ChatColor.RED + "Failed to remove referral link for " + playerName + ".");
+                }
+            });
+        });
 
         return true;
     }

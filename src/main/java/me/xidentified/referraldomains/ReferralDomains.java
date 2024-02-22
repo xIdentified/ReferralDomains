@@ -6,12 +6,12 @@ import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 
 import org.bukkit.scheduler.BukkitRunnable;
 import org.json.JSONArray;
@@ -38,10 +38,10 @@ public final class ReferralDomains extends JavaPlugin {
         reloadConfig();
 
         // Register commands
-        this.getCommand("referral-link").setExecutor(new ReferralLinkCommand(this));
-        this.getCommand("check-domain").setExecutor(new CheckDomainCommand(this));
-        this.getCommand("remove-referral-link").setExecutor(new RemoveReferralCommand(this));
-        this.getCommand("referralcount").setExecutor(new ReferralCountCommand(this));
+        Objects.requireNonNull(this.getCommand("referral-link")).setExecutor(new ReferralLinkCommand(this));
+        Objects.requireNonNull(this.getCommand("check-domain")).setExecutor(new CheckDomainCommand(this));
+        Objects.requireNonNull(this.getCommand("remove-referral-link")).setExecutor(new RemoveReferralCommand(this));
+        Objects.requireNonNull(this.getCommand("referralcount")).setExecutor(new ReferralCountCommand(this));
 
         // Register listeners
         getServer().getPluginManager().registerEvents(new EventListener(this), this);
@@ -51,7 +51,6 @@ public final class ReferralDomains extends JavaPlugin {
             new PlaceholderAPI(this).register();
         }
 
-        // Further initialization...
         validateConfigSetup();
     }
 
@@ -69,7 +68,7 @@ public final class ReferralDomains extends JavaPlugin {
 
     }
 
-    public boolean createDNSRecord(String playerName) {
+    public CompletableFuture<Boolean> createDNSRecord(String playerName) {
         String apiKey = getConfig().getString("cloudfare-api-key");
         String serverIP = getConfig().getString("server-ip");
         String serverDomain = getConfig().getString("domain");
@@ -79,44 +78,34 @@ public final class ReferralDomains extends JavaPlugin {
         String aRecordName = playerName.toLowerCase() + "." + serverDomain;
         debugLog("Creating A record for " + aRecordName);
 
-        return createRecord(apiUrl, apiKey, "A", aRecordName, serverIP);
+        return CompletableFuture.supplyAsync(() -> createRecord(apiUrl, apiKey, "A", aRecordName, serverIP));
     }
 
     private boolean createRecord(String apiUrl, String apiKey, String type, String name, String content) {
-        try {
-            HttpClient httpClient = HttpClient.newHttpClient();
+        HttpClient httpClient = HttpClient.newHttpClient();
+        String json = "{\"type\":\"" + type + "\",\"name\":\"" + name + "\",\"content\":\"" + content + "\",\"ttl\":120,\"proxied\":false}";
 
-            // Construct the JSON payload
-            String json = "{\"type\":\"" + type + "\",\"name\":\"" + name + "\",\"content\":\"" + content + "\",\"ttl\":120,\"proxied\":false}";
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(apiUrl))
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + apiKey)
+                .POST(HttpRequest.BodyPublishers.ofString(json))
+                .build();
 
-            // Create the HTTP request
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(apiUrl))
-                    .header("Content-Type", "application/json")
-                    .header("Authorization", "Bearer " + apiKey)
-                    .POST(HttpRequest.BodyPublishers.ofString(json))
-                    .build();
-
-            // Send the request
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-            int statusCode = response.statusCode();
-            String responseString = response.body();
-
-            debugLog("Cloudflare API Response for " + type + " record: Status Code: " + statusCode + ", Response Body: " + responseString);
-            return statusCode == 200;
-        } catch (IOException | InterruptedException e) {
-            e.printStackTrace();
-            return false;
-        }
+        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .thenApply(response -> {
+                    int statusCode = response.statusCode();
+                    String responseString = response.body();
+                    debugLog("Cloudflare API Response for " + type + " record: Status Code: " + statusCode + ", Response Body: " + responseString);
+                    return statusCode == 200;
+                }).join(); // Use join to get the result synchronously, consider handling it asynchronously
     }
 
-    public String checkDNSRecord(String playerName) {
+    public CompletableFuture<String> checkDNSRecord(String playerName) {
         String apiKey = getConfig().getString("cloudfare-api-key");
         String zoneIdentifier = getConfig().getString("zone-id");
         String serverDomain = getConfig().getString("domain");
         String apiUrl = "https://api.cloudflare.com/client/v4/zones/" + zoneIdentifier + "/dns_records?name=" + playerName.toLowerCase() + "." + serverDomain;
-        debugLog("Constructed API URL: " + apiUrl);
 
         HttpClient httpClient = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest.newBuilder()
@@ -126,27 +115,23 @@ public final class ReferralDomains extends JavaPlugin {
                 .GET()
                 .build();
 
-        try {
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            int statusCode = response.statusCode();
-            String responseString = response.body();
-
-            if (statusCode == 200) {
-                JSONObject jsonResponse = new JSONObject(responseString);
-                JSONArray resultArray = jsonResponse.getJSONArray("result");
-                if (resultArray.isEmpty()) {
-                    return ChatColor.RED + "Offline";
-                } else {
-                    return ChatColor.GREEN + "Online";
-                }
-            } else {
-                getLogger().severe("Error fetching DNS record for " + playerName + ": " + responseString);
-                return ChatColor.RED + "Error fetching DNS record, status code: " + statusCode;
-            }
-        } catch (IOException | InterruptedException | JSONException e) {
-            getLogger().severe("Exception while fetching DNS record for " + playerName + ": " + e.getMessage());
-            return ChatColor.RED + "Error fetching DNS record: " + e.getMessage();
-        }
+        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .thenApply(response -> {
+                    int statusCode = response.statusCode();
+                    if (statusCode == 200) {
+                        try {
+                            JSONObject jsonResponse = new JSONObject(response.body());
+                            JSONArray resultArray = jsonResponse.getJSONArray("result");
+                            return resultArray.isEmpty() ? ChatColor.RED + "Offline" : ChatColor.GREEN + "Online";
+                        } catch (JSONException e) {
+                            getLogger().severe("Exception while parsing DNS record for " + playerName + ": " + e.getMessage());
+                            return ChatColor.RED + "Error parsing DNS record: " + e.getMessage();
+                        }
+                    } else {
+                        getLogger().severe("Error fetching DNS record for " + playerName + ": " + response.body());
+                        return ChatColor.RED + "Error fetching DNS record, status code: " + statusCode;
+                    }
+                });
     }
 
     private String extractRecordId(String responseString) {
@@ -172,15 +157,13 @@ public final class ReferralDomains extends JavaPlugin {
         return referralLinks.containsValue(domain);
     }
 
-    public boolean deleteDNSRecord(String playerName) {
+    public CompletableFuture<Boolean> deleteDNSRecord(String playerName) {
         String apiKey = getConfig().getString("cloudfare-api-key");
         String zoneId = getConfig().getString("zone-id");
         String serverDomain = getConfig().getString("domain");
         String apiUrl = "https://api.cloudflare.com/client/v4/zones/" + zoneId + "/dns_records";
 
         HttpClient httpClient = HttpClient.newHttpClient();
-
-        // Fetch the DNS record ID
         HttpRequest getRequest = HttpRequest.newBuilder()
                 .uri(URI.create(apiUrl + "?name=" + playerName.toLowerCase() + "." + serverDomain))
                 .header("Authorization", "Bearer " + apiKey)
@@ -188,42 +171,29 @@ public final class ReferralDomains extends JavaPlugin {
                 .GET()
                 .build();
 
-        try {
-            HttpResponse<String> getResponse = httpClient.send(getRequest, HttpResponse.BodyHandlers.ofString());
+        return httpClient.sendAsync(getRequest, HttpResponse.BodyHandlers.ofString())
+                .thenCompose(getResponse -> {
+                    if (getResponse.statusCode() != 200) {
+                        getLogger().severe("Failed to fetch DNS record for " + playerName);
+                        return CompletableFuture.completedFuture(false);
+                    }
 
-            if (getResponse.statusCode() != 200) {
-                getLogger().severe("Failed to fetch DNS record for " + playerName);
-                return false;
-            }
+                    String dnsRecordId = extractRecordId(getResponse.body());
+                    if (dnsRecordId == null || dnsRecordId.isEmpty()) {
+                        getLogger().severe("Failed to extract DNS record ID for " + playerName);
+                        return CompletableFuture.completedFuture(false);
+                    }
 
-            // Extract the DNS record ID
-            String dnsRecordId = extractRecordId(getResponse.body());
-            if (dnsRecordId == null || dnsRecordId.isEmpty()) {
-                getLogger().severe("Failed to extract DNS record ID for " + playerName);
-                return false;
-            }
+                    HttpRequest deleteRequest = HttpRequest.newBuilder()
+                            .uri(URI.create(apiUrl + "/" + dnsRecordId))
+                            .header("Authorization", "Bearer " + apiKey)
+                            .header("Content-Type", "application/json")
+                            .DELETE()
+                            .build();
 
-            // Delete the DNS record
-            HttpRequest deleteRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(apiUrl + "/" + dnsRecordId))
-                    .header("Authorization", "Bearer " + apiKey)
-                    .header("Content-Type", "application/json")
-                    .DELETE()
-                    .build();
-
-            HttpResponse<String> deleteResponse = httpClient.send(deleteRequest, HttpResponse.BodyHandlers.ofString());
-
-            if (deleteResponse.statusCode() == 200) {
-                getLogger().info("Successfully deleted DNS record for " + playerName);
-                return true;
-            } else {
-                getLogger().severe("Failed to delete DNS record for " + playerName + ": " + deleteResponse.body());
-                return false;
-            }
-        } catch (IOException | InterruptedException e) {
-            getLogger().severe("IOException while deleting DNS record for " + playerName + ": " + e.getMessage());
-            return false;
-        }
+                    return httpClient.sendAsync(deleteRequest, HttpResponse.BodyHandlers.ofString())
+                            .thenApply(deleteResponse -> deleteResponse.statusCode() == 200);
+                });
     }
 
     public void handleReferral(final String playerName, String domain) {
